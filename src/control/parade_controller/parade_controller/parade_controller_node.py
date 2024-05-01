@@ -13,6 +13,9 @@ from rclpy.node import Node
 
 from sensor_msgs.msg import PointCloud2
 
+from navigator_msgs.srv import RetrieveStatus
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+
 from scipy.spatial.transform import Rotation as R
 
 import rclpy
@@ -31,6 +34,8 @@ class ParadeController(Node):
         self.INTENSITY_THRESHOLD = 200
         self.DESIRED_DISTANCE = 3.7
 
+        self.statusBool = None
+
         # PID control params
         self.Kp_Throttle = 1  # Proportional gain
         self.Kp_Steer = .3
@@ -40,6 +45,12 @@ class ParadeController(Node):
 
         # Subscriber
         self.lidar_left_sub = self.create_subscription(PointCloud2, 'velodyne_points', self.pointclouds_cb, 10)
+
+        # Clock subscriber
+        self.clock_sub = self.create_subscription(Clock, '/clock', self.clockCb, 1)
+
+        # Diagnostic service
+        self.service = self.create_service(RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
 
         # TF listener
 
@@ -51,6 +62,8 @@ class ParadeController(Node):
         self.transformed_lidar_pub = self.create_publisher(PointCloud2, '/lidar_tfed', 1)
 
     def pointclouds_cb(self, msg: PointCloud2):
+
+        self.statusBool = False
 
         pcd: np.array = rnp.numpify(msg)
 
@@ -159,8 +172,37 @@ class ParadeController(Node):
 
         self.transformed_lidar_pub.publish(tfed_msg)
 
+        self.statusBool = True
 
+    def retrieveStatusCb(self, response):
+        self.msg = DiagnosticStatus()
+        self.stamp = KeyValue()
 
+        self.msg.name = 'Parade Controller'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.msg.values.append(self.stamp)
+
+        if self.statusBool == True:
+            self.msg.level = DiagnosticStatus.OK
+            self.msg.message = 'Node is FUNCTIONING properly!'
+
+        elif self.statusBool == False:
+            self.msg.level = DiagnosticStatus.ERROR
+            self.msg.message = 'Node has encountered an ERROR!'
+
+        elif self.statusBool == None:
+            self.msg.level = DiagnosticStatus.WARN
+            self.msg.message = 'Diagnostics unknown...'
+
+        response.status = self.msg
+        self.get_logger().info(f"Incoming request from Guardian to Parade Controller...")
+        return response
+    
+    def clockCb(self, msg: Clock):
+        self.clock = msg.clock
 
 def main(args=None):
     rclpy.init(args=args)
