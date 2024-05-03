@@ -20,6 +20,8 @@ import matplotlib.pyplot as plt
 from rosgraph_msgs.msg import Clock
 from std_msgs.msg import Float32
 from sensor_msgs.msg import Image
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+from navigator_msgs.srv import RetrieveStatus
 
 from mmseg.apis import inference_segmentor, init_segmentor, show_result_pyplot
 
@@ -122,12 +124,18 @@ class DriveableAreaNode(Node):
     def __init__(self):
         super().__init__('driveable_area_node')
 
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((3,), dtype = int)
+
         camera_sub = self.create_subscription(
             Image, '/cameras/camera0', self.cameraCb, 1)
 
         # Subscribes to clock for headers
         self.clock_sub = self.create_subscription(
             Clock, '/clock', self.clockCb, 10)
+        # Diagnostic service
+        self.service = self.create_service(RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
         # Subscribes to timer in order to make predictions at a constant rate
         self.timer = self.create_timer(0.1, self.makeSegmentation)
 
@@ -149,8 +157,45 @@ class DriveableAreaNode(Node):
     def clockCb(self, msg: Clock):
         self.clock = msg.clock
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def cameraCb(self, image):
         self.current_image = image
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'Driveable Area'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.status.values.append(self.stamp)
+
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+
+        if self.statusBool == True:
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+
+        response.status = self.status
+        self.get_logger().info("Incoming request from Guardian to Driveable Area...")
+        return response
 
     def makeSegmentation(self):
         if self.current_image == None:
@@ -206,6 +251,9 @@ class DriveableAreaNode(Node):
         self.result_pub.publish(result_msg)
 
         self.get_logger().info(f"{time.time() - start}")
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
 
 def main(args=None):
