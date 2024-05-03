@@ -11,6 +11,11 @@ from rclpy.node import Node
 from nav_msgs.msg import Odometry
 import math
 
+import numpy as np
+from rosgraph_msgs.msg import Clock
+from navigator_msgs.srv import RetrieveStatus
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+
 from std_msgs.msg import String, Header
 from geometry_msgs.msg import PoseStamped, Point, PoseWithCovarianceStamped, PointStamped, Quaternion, Vector3
 from nav_msgs.msg import Path
@@ -35,8 +40,50 @@ class UnifiedController(Node):
     def paths_cb(self, msg: Trajectory):
         self.cached_path = msg
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def odom_cb(self, msg: Odometry):
         self.cached_odometry = msg
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def clockCb(self, msg: Clock):
+        self.clock = msg.clock
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'Unified Controller'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.status.values.append(self.stamp)
+
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+        
+        if self.statusBool == True:
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+
+        response.status = self.status
+        self.get_logger().info(f"Incoming request from Guardian to Unified Controller...")
+        return response
 
     def generate_commands(self):
 
@@ -95,6 +142,9 @@ class UnifiedController(Node):
         self.steering_pub.publish(SteeringPosition(
             data= self.steering_angle_to_wheel(steering_angle)
         ))
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
     
     def closest_point_index(self, pos: Point) -> int:
         """
@@ -212,6 +262,10 @@ class UnifiedController(Node):
     def __init__(self):
         super().__init__('unified_controller_node')
 
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((4,), dtype = int)
+
         # Subscribe to our path
         self.path_sub = self.create_subscription(
             Trajectory,
@@ -225,6 +279,19 @@ class UnifiedController(Node):
             '/carla/odom',
             self.odom_cb,
             10
+        )
+        # Subcribe to clock
+        self.clock_sub = self.create_subscription(
+            Clock,
+            '/clock',
+            self.clockCb,
+            1
+        )
+        # Diagnostic service
+        self.service = self.create_service(
+            RetrieveStatus,
+            'retrieve_status',
+            self.retrieveStatusCb
         )
         # Publishers for throttle, brake, and steering
         self.throttle_pub = self.create_publisher(
