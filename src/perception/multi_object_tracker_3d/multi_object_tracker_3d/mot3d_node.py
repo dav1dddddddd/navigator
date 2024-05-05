@@ -1,10 +1,15 @@
 import rclpy
+import numpy as np
 from rclpy.node import Node
 from navigator_msgs.msg import Object3D, Object3DArray
 from .tracker import Tracker3D
 from easydict import EasyDict
 from mmdet3d.structures import LiDARInstance3DBoxes
 from geometry_msgs.msg import Point
+
+from rosgraph_msgs.msg import Clock
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+from navigator_msgs.srv import RetrieveStatus
 
 
 CLASS2LABEL = {
@@ -19,6 +24,10 @@ class MultiObjectTracker3DNode(Node):
 
     def __init__(self):
         super().__init__('multi_object_tracker_3d_node')
+
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((2,), dtype = int)
         
         self.declare_parameter("state_func_covariance", 100)
         self.declare_parameter("measure_func_covariance", 0.001)
@@ -82,14 +91,59 @@ class MultiObjectTracker3DNode(Node):
             callback = self.detection_callback, 
             qos_profile = 10
         )
-
+        self.clock_sub = self.create_subscription(
+            msg_type = Clock,
+            topic = '/clock',
+            callback = self.clockCb,
+            qos_profile = 10
+        )
+        self.service = self.create_service(
+            RetrieveStatus,
+            'retrieve_status',
+            self.retrieveStatusCb
+        )
         self.tracked_objects_publisher = self.create_publisher(
             msg_type = Object3DArray,
             topic = 'objdet3d_tracked',
             qos_profile = 10
         )
 
-        
+    def clockCb(self, msg: Clock):
+        self.clock = msg.clock
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'Multi-Object Tracker 3D'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.status.values.append(self.stamp)
+
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+
+        if self.statusBool == True:
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+
+        response.status = self.status
+        self.get_logger().info(f"Incoming request from Guardian to MOT3D...")
+        return response
 
     def detection_callback(self, detection_msg: Object3DArray):
         # sort objects by class
@@ -144,6 +198,9 @@ class MultiObjectTracker3DNode(Node):
         tracked_objects_array.header.frame_id = detection_msg.header.frame_id
         self.tracked_objects_publisher.publish(tracked_objects_array)   
         self.frame_stamp += 1
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
     
     # remaps ids unique for each class to unique for all classes
     def get_unique_id(self, label, id):
