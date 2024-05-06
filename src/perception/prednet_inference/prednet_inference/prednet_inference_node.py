@@ -29,6 +29,9 @@ from rosgraph_msgs.msg import Clock
 from std_msgs.msg import Float32
 from sensor_msgs.msg import PointCloud2
 
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+from navigator_msgs.srv import RetrieveStatus
+
 from nav_msgs.msg import OccupancyGrid
 from navigator_msgs.msg import Masses
 from navigator_msgs.msg import Egma
@@ -47,6 +50,10 @@ class PredNetNode(Node):
     def __init__(self):
         super().__init__('prednet_inference_node')
 
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((3,), dtype = int)
+
         # Subcribes to masses
         self.masses_sub = self.create_subscription(
             Masses, '/grid/masses', self.masses_callback, 10)
@@ -55,6 +62,11 @@ class PredNetNode(Node):
             Clock, '/clock', self.clock_cb, 10)
         # Subscribes to timer in order to make predictions at a constant rate
         self.timer = self.create_timer(0.1, self.makePrediction)
+
+        # Diagnostic service
+        self.service = self.create_service(
+            RetrieveStatus, 'retrieve_status', self.retrieveStatusCb
+        )
 
         # Instantiates publisher
         self.pred_all_pub = self.create_publisher(
@@ -128,6 +140,40 @@ class PredNetNode(Node):
     def clock_cb(self, msg):
         self.clock = msg.clock
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'Multi-Object Tracker 3D'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.status.values.append(self.stamp)
+
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+
+        if self.statusBool == True:
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+
+        response.status = self.status
+        self.get_logger().info(f"Incoming request from Guardian to PredNet Inference...")
+        return response
+
     # Adds masses to history
     def masses_callback(self, mass):
         if self.clock.sec + 1e-9 * self.clock.nanosec - self.lastAccepted < 1. / self.frameRate  - 0.01:
@@ -157,8 +203,9 @@ class PredNetNode(Node):
         
         #Updates last accepted time
         self.lastAccepted = self.clock.sec + 1e-9 * self.clock.nanosec
-        
-                
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
     
     def makePrediction(self):
         # 0.09s average prediction time
@@ -218,6 +265,9 @@ class PredNetNode(Node):
 
         # Gets the total time takes to make the prediction
         totalTimeTaken = self.get_clock().now() - startTime
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
         # self.get_logger().info("Published the model prednet Model Prediction in " + str(totalTimeTaken.nanoseconds / pow(10,9)))
 
