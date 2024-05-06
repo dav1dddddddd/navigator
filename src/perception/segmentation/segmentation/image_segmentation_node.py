@@ -25,6 +25,9 @@ from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Image, PointCloud2
 from std_msgs.msg import Float32
 
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+from navigator_msgs.srv import RetrieveStatus
+
 import matplotlib.pyplot as plt
 
 import cv2
@@ -92,6 +95,11 @@ class ImageSegmentationNode(Node):
 
     def __init__(self):
         super().__init__('image_segmentation_node')
+
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((2,), dtype = int)
+
         config_file = '/mmsegmentation/configs/pspnet/pspnet_r18-d8_512x1024_80k_cityscapes.py'
         checkpoint_file = '/navigator/data/perception/pspnet_r18-d8_512x1024_80k_cityscapes_20201225_021458-09ffa746.pth'
 
@@ -122,11 +130,47 @@ class ImageSegmentationNode(Node):
         self.clock_sub = self.create_subscription(
             Clock, '/clock', self.clock_cb, 1)
         self.clock = Clock()
+        self.service = self.create_service(
+            RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
         # model.show_result(img, result, out_file='result.jpg', opacity=1.0)
         self.bridge = CvBridge()
 
     def clock_cb(self, msg: Clock):
         self.clock = msg
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'Image Segmentation'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.status.values.append(self.stamp)
+
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+
+        if self.statusBool == True:
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+
+        response.status = self.status
+        self.get_logger().info(f"Incoming request from Guardian to Image Segmentation...")
+        return response
 
     def imageToNumpy(self, msg) -> np.ndarray:
         """Converts Image message to numpy array
@@ -256,6 +300,9 @@ class ImageSegmentationNode(Node):
 
         self.left_result_pub.publish(result_msg_rgb)
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def rgbRightCb(self, msg: Image):
         img_array = self.bridge.imgmsg_to_cv2(
             msg, 'rgb8')[:, :, :3]  # Cut out alpha
@@ -270,6 +317,8 @@ class ImageSegmentationNode(Node):
 
         self.right_result_pub.publish(result_msg_rgb)
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
 def main(args=None):
     rclpy.init(args=args)
