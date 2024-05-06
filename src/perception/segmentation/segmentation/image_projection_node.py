@@ -145,7 +145,7 @@ class ImageProjectioNode(Node):
         self.status = DiagnosticStatus()
         self.stamp = KeyValue()
 
-        self.status.name = 'Multi-Object Tracker 3D'
+        self.status.name = 'Image Projection'
 
         self.stamp.key = 'stamp ID'
         self.stamp.value = str(self.clock)
