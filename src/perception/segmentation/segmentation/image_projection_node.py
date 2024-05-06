@@ -25,6 +25,9 @@ from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 from std_msgs.msg import Float32
 
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+from navigator_msgs.srv import RetrieveStatus
+
 import image_geometry
 import matplotlib.pyplot as plt
 
@@ -90,10 +93,21 @@ class ImageProjectioNode(Node):
 
     def __init__(self):
         super().__init__('image_projection_node')
+
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((6,), dtype = int)
+
         self.get_logger().info("Ready to project!")
 
         lidar_sub = self.create_subscription(
             PointCloud2, "/lidar/fused", self.lidarCb, 1)
+
+        self.clock_sub = self.create_subscription(
+            Clock, '/clock', self.clockCb, 10)
+
+        self.service = self.create_service(
+            RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
 
         self.semantic_lidar_pub = self.create_publisher(
             PointCloud2, "/lidar/semantic", 10)
@@ -120,6 +134,43 @@ class ImageProjectioNode(Node):
 
         self.left_semantic_image = None
         self.right_semantic_image = None
+
+    def clockCb(self, msg: Clock):
+        self.clock = msg.clock
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'Multi-Object Tracker 3D'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.status.values.append(self.stamp)
+
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+
+        if self.statusBool == True:
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+
+        response.status = self.status
+        self.get_logger().info(f"Incoming request from Guardian to Image Projection...")
+        return response
 
     def imageToNumpy(self, msg: Image) -> np.array:
         """Converts Image message to numpy array
@@ -166,6 +217,9 @@ class ImageProjectioNode(Node):
         self.left_cam_model = image_geometry.PinholeCameraModel()
         self.left_cam_model.fromCameraInfo(msg)
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def rightCameraInfoCb(self, msg: CameraInfo):
         """Sets camera info for right camera
 
@@ -180,11 +234,20 @@ class ImageProjectioNode(Node):
         self.right_cam_model = image_geometry.PinholeCameraModel()
         self.right_cam_model.fromCameraInfo(msg)
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def leftCameraImageCb(self, msg: Image):
         self.left_semantic_image = self.imageToNumpy(msg)
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def rightCameraImageCb(self, msg: Image):
         self.right_semantic_image = self.imageToNumpy(msg)
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def tagPoints(self, camera_frame: str, pts: np.array, semantic_img: np.array) -> np.array:
         """Given LiDAR point cloud and semantic segmentation image, paint the image
@@ -314,6 +377,9 @@ class ImageProjectioNode(Node):
         result_msg.header = msg.header
 
         self.semantic_lidar_pub.publish(result_msg)
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
 
 def main(args=None):
