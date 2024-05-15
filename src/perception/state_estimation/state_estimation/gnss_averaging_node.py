@@ -32,7 +32,8 @@ from tf2_ros import TransformBroadcaster
 
 # Message definitions
 from navigator_msgs.msg import CarlaSpeedometer
-from diagnostic_msgs.msg import DiagnosticStatus
+from navigator_msgs.srv import RetrieveStatus
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
 from geometry_msgs.msg import PoseStamped, TransformStamped, Vector3
 from nav_msgs.msg import Odometry
 from rosgraph_msgs.msg import Clock
@@ -43,6 +44,10 @@ class GnssAveragingNode(Node):
 
     def __init__(self):
         super().__init__('gnss_averaging_node')
+
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((6,), dtype = int)
 
         self.clock_sub = self.create_subscription(
             Clock, '/clock', self.clock_cb, 1)
@@ -69,6 +74,8 @@ class GnssAveragingNode(Node):
 
         self.diagnostic_pub = self.create_publisher(
             DiagnosticStatus, '/node_statuses', 1)
+
+        self.service = self.create_service(RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
 
         self.tf_broadcaster = TransformBroadcaster(self)
 
@@ -104,6 +111,9 @@ class GnssAveragingNode(Node):
         if self.yaw > np.pi:
             self.yaw -= 2 * np.pi
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def true_pose_cb(self, msg: PoseStamped):
         if self.current_pose is None:
             return
@@ -111,6 +121,9 @@ class GnssAveragingNode(Node):
         dy = abs(msg.pose.position.y*-1 - self.current_pose[1])
         error = math.sqrt(dx**2 + dy**2)
         print(f"Error: {error}")
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def publish_diagnostics(self):
         status = DiagnosticStatus()
@@ -255,17 +268,60 @@ class GnssAveragingNode(Node):
         t.transform.rotation = result_msg.pose.pose.orientation
         # self.tf_broadcaster.sendTransform(t)
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def clock_cb(self, msg: Clock):
         if self.last_update_time is None:
             self.last_update_time = msg.clock.sec + msg.clock.nanosec*1e-9
 
         self.clock = msg.clock
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def imu_cb(self, msg: Imu):
         self.heading_rate = msg.angular_velocity.z
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def speedometer_cb(self, msg: CarlaSpeedometer):
         self.speed = msg.speed
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'GNSS Averaging'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.status.values.append(self.stamp)
+
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+
+        if self.statusBool == True:
+            self.status.level - DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+
+        response.status = self.status
+        self.get_logger().info(f"Incoming request from Guardian to GNSS Averaging...")
+        return response
 
 
 def main(args=None):
