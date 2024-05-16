@@ -27,6 +27,8 @@ import time
 
 # Message definitions
 from navigator_msgs.msg import CarlaSpeedometer
+from navigator_msgs.srv import RetrieveStatus
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import OccupancyGrid, Odometry
 from navigator_msgs.srv import GetLandmarks
@@ -44,6 +46,10 @@ class MCLNode(Node):
 
     def __init__(self):
         super().__init__('mcl_node')
+
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((6,), dtype = int)
 
         self.previous_result = None
         self.clock = Clock()
@@ -73,6 +79,8 @@ class MCLNode(Node):
         self.speed_sub = self.create_subscription(
             CarlaSpeedometer, '/carla/hero/speedometer', self.speed_cb, 1)
 
+        self.service = self.create_service(RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
+
         self.particle_cloud_pub = self.create_publisher(
             PointCloud2, '/mcl/particles', 10)
         # landmark_request = GetLandmarks.Request()
@@ -97,11 +105,20 @@ class MCLNode(Node):
     def clock_cb(self, msg: Clock):
         self.clock = msg
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def imu_cb(self, msg: Imu):
         self.imu = msg
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def speed_cb(self, msg: CarlaSpeedometer):
         self.speed = msg.speed
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def getMotionDelta(self, current_gnss_pose, old_gnss_pose, speed: float, dt):
 
@@ -201,6 +218,9 @@ class MCLNode(Node):
         # Cache our gnss_pose to calculate the delta later
         self.previous_result = result_pose
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def gnss_cb(self, msg: Odometry):
         pose_msg = msg.pose.pose
         yaw = 2*math.asin(pose_msg.orientation.z)
@@ -210,6 +230,9 @@ class MCLNode(Node):
             pose_msg.position.y,
             yaw
         ])
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def map_cb(self, msg: OccupancyGrid):
         data = np.rot90(np.array(msg.data).reshape(151, 151), k=1, axes=(1, 0))
@@ -235,6 +258,39 @@ class MCLNode(Node):
 
         self.get_logger().info("MCL filter created")
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'MCL'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+        
+        self.status.values.append(self.stamp)
+
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+
+        if self.statusBool == True:
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+
+        response.status = self.status
+        self.get_logger().info(f"Incoming request from Guardian to MCL...")
+        return response
 
 def main(args=None):
     rclpy.init(args=args)
