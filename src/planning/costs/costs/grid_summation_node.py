@@ -17,7 +17,8 @@ from tf2_ros.transform_listener import TransformListener
 
 # Message definitions
 from navigator_msgs.msg import CarlaSpeedometer
-from diagnostic_msgs.msg import DiagnosticStatus
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+from navigator_msgs.srv import RetrieveStatus
 from nav_msgs.msg import OccupancyGrid, Path
 from navigator_msgs.msg import Egma
 from rosgraph_msgs.msg import Clock
@@ -56,6 +57,10 @@ class GridSummationNode(Node):
 
         """
         super().__init__('grid_summation_node')
+
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((9,), dtype = int)
 
         self.current_occupancy_grid = OccupancyGrid()
         self.future_occupancy_grid = OccupancyGrid()
@@ -115,6 +120,9 @@ class GridSummationNode(Node):
         self.clock_sub = self.create_subscription(
             Clock, '/clock', self.clockCb, 1)
 
+        # Diagnostic service
+        self.service = self.create_service(RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
+
         self.clock = Clock()
 
         self.speed = 0.0
@@ -136,32 +144,87 @@ class GridSummationNode(Node):
             self.ego_has_stopped = False
             print("Ego has NOT stopped")
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def clockCb(self, msg: Clock):
-        self.clock = msg
+        self.clock = msg.clock
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'Grid Summation'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.status.values.append(self.stamp)
+
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+
+        if self.statusBool == True:
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+        
+        response.status = self.status
+        self.get_logger().info(f"Incoming request from Guardian to Grid Summation...")
+        return response
 
     # Make sure we're only keeping the newest grid messages
     def currentOccupancyCb(self, msg: OccupancyGrid):
         if self.current_occupancy_grid is None or msg.header.stamp.sec + msg.header.stamp.nanosec*1e-9 > self.current_occupancy_grid.header.stamp.sec + self.current_occupancy_grid.header.stamp.nanosec*1e-9:
             self.current_occupancy_grid = msg
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def futureOccupancyCb(self, msg: OccupancyGrid):
         if self.future_occupancy_grid is None or msg.header.stamp.sec + msg.header.stamp.nanosec*1e-9 > self.future_occupancy_grid.header.stamp.sec + self.future_occupancy_grid.header.stamp.nanosec*1e-9:
             self.future_occupancy_grid = msg
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def drivableGridCb(self, msg: OccupancyGrid):
         if self.drivable_grid is None or msg.header.stamp.sec + msg.header.stamp.nanosec*1e-9 > self.drivable_grid.header.stamp.sec + self.drivable_grid.header.stamp.nanosec*1e-9:
             self.drivable_grid = msg
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def junctionGridCb(self, msg: OccupancyGrid):
         if self.junction_grid is None or msg.header.stamp.sec + msg.header.stamp.nanosec*1e-9 > self.junction_grid.header.stamp.sec + self.junction_grid.header.stamp.nanosec*1e-9:
             self.junction_grid = msg
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def routeDistGridCb(self, msg: OccupancyGrid):
         if self.route_dist_grid is None or msg.header.stamp.sec + msg.header.stamp.nanosec*1e-9 > self.route_dist_grid.header.stamp.sec + self.route_dist_grid.header.stamp.nanosec*1e-9:
             self.route_dist_grid = msg
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def routeCb(self, msg: Path):
         self.route = msg.poses
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def checkForStaleness(self, grid: OccupancyGrid, status: DiagnosticStatus):
         stamp = grid.header.stamp
@@ -411,6 +474,9 @@ class GridSummationNode(Node):
         speed_cost_msg.header.frame_id = 'base_link'
         speed_cost_msg.data = speed_cost.astype(np.int8).flatten().tolist()
         self.speed_cost_pub.publish(speed_cost_msg)
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
         # Temporarily commenting out...
         # egma_msg = Egma()
