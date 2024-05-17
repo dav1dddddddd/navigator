@@ -32,7 +32,8 @@ from tf2_ros.transform_listener import TransformListener
 
 # Message definitions
 from navigator_msgs.msg import CarlaSpeedometer
-from diagnostic_msgs.msg import DiagnosticStatus
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+from navigator_msgs.srv import RetrieveStatus
 from nav_msgs.msg import OccupancyGrid
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Joy
@@ -47,6 +48,10 @@ class JunctionManager(Node):
 
     def __init__(self):
         super().__init__('junction_manager')
+
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((6,), dtype = int)
 
         self.target_speed = 0.0
 
@@ -87,16 +92,57 @@ class JunctionManager(Node):
         
         self.is_waiting_pub = self.create_publisher(Bool, '/planning/is_waiting', 1)
 
-        
+        # Diagnostic service
+        self.service = self.create_service(RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
 
     def speedometerCb(self, msg: CarlaSpeedometer):
         self.speed = msg.speed
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def clockCb(self, msg: Clock):
         self.time_sec = msg.clock.sec + msg.clock.nanosec * 1e-9
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'Junction Manager'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.status.values.append(self.stamp)
+
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+
+        if self.statusBool == True:
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+        
+        response.status = self.status
+        self.get_logger().info(f"Incoming request from Guardian to Junction Manager...")
+        return response
+
     def buttonCb(self, msg: Joy):
         self.button = msg.buttons[8]
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def resizeOccupancyGrid(self, original: np.ndarray) -> np.ndarray:
         # This is a temporary measure until our current occ. grid's params
@@ -124,9 +170,15 @@ class JunctionManager(Node):
         # This creates a binary array, where each cell is simply "is occupied" or "is not occupied"
         self.current_occupancy_grid = occupancy_grid > 80.0
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def targetSpeedCb(self, msg: CarlaSpeedometer):
         self.target_speed = msg.speed
         # self.get_logger().info(f"TARGET SPEED: {self.target_speed}")
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def junctionIsOccupied(self, occupancy, junction) -> bool:
         # Erode the occupancy grid slightly.
@@ -246,8 +298,14 @@ class JunctionManager(Node):
         stateful_msg.header = msg.header
         self.stateful_grid_pub.publish(stateful_msg)
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def routeDistGridCb(self, msg: OccupancyGrid):
         self.route_dist_grid = msg
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def getWeightedArray(self, msg: OccupancyGrid, scale: float) -> np.ndarray:
         """Converts the OccupancyGrid message into a numpy array, then multiplies it by scale
