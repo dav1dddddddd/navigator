@@ -6,6 +6,10 @@ Author:    Will Heitman (w at heit.mn)
 Simple node that listens for safety events and plays matching audio alerts.
 '''
 from navigator_msgs.msg import Mode
+import numpy as np
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+from rosgraph_msgs.msg import Clock
+from navigator_msgs.srv import RetrieveStatus
 import rclpy
 from rclpy.node import Node
 import simpleaudio
@@ -18,6 +22,10 @@ class sound_node(Node):
 
     def __init__(self):
         super().__init__('sound_node')
+
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((3,), dtype = int)
 
         self.current_mode = Mode.DISABLED
 
@@ -37,6 +45,11 @@ class sound_node(Node):
         self.teleop_on_wav = simpleaudio.WaveObject.from_wave_file(os.path.join(sound_dir, "teleop_on.wav"))
         self.disable_wav = simpleaudio.WaveObject.from_wave_file(os.path.join(sound_dir, "disable.wav"))
 
+        self.clock_sub = self.create_subscription(Clock, '/clock', self.clockCb, 10)
+
+        # Diagnostic service
+        self.service = self.create_service(RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
+
         current_mode_sub = self.create_subscription(Mode, "/guardian/mode", self.currentModeCb, 1)
         alert_sound_timer = self.create_timer(1.0, self.playAlert)
 
@@ -52,11 +65,49 @@ class sound_node(Node):
             self.waiting_done_wav.play()
         elif is_waiting:
             print("Is waiting")
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
             # self.doPlayWaitingSound = True
 
         # self.doPlayWaitingSound = False
 
+    def clockCb(self, msg: Clock):
+        self.clock = msg.clock
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'Sound'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.status.values.append(self.stamp)
+
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+
+        if self.statusBool == True:
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+
+        response.status = self.status
+        self.get_logger().info(f"Incoming request from Guardian to Sound...")
+        return response
 
     def playWaitingSound(self):
         if not self.doPlayWaitingSound:
@@ -64,12 +115,18 @@ class sound_node(Node):
 
         self.waiting_play_obj = self.waiting_wav.play()
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def playAlert(self):
         if not self.doPlayAlert:
             return
 
         if self.alert_play_obj is None or not self.alert_play_obj.is_playing():
             self.alert_play_obj = self.alert_wav.play()
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def currentModeCb(self, msg: Mode):
 
@@ -85,8 +142,9 @@ class sound_node(Node):
         elif msg.mode == Mode.DISABLED:
             print("DISABLED")
             self.disable_wav.play() 
-        
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
 def main(args=None):
     rclpy.init(args=args)
