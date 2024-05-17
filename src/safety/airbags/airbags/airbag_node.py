@@ -9,7 +9,8 @@ Code to establish safety zones around the car where the speed is limited.
 from matplotlib import pyplot as plt
 from navigator_msgs.msg import VehicleControl
 from navigator_msgs.msg import CarlaSpeedometer, VehicleControl
-from diagnostic_msgs.msg import DiagnosticStatus
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+from navigator_msgs.srv import RetrieveStatus
 from nav_msgs.msg import OccupancyGrid
 import numpy as np
 import ros2_numpy as rnp
@@ -27,6 +28,10 @@ from matplotlib.patches import Rectangle
 class AirbagNode(Node):
     def __init__(self):
         super().__init__('airbag_node')
+
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((3,), dtype = int)
 
         self.speed_limit = 0.  # m/s
         self.current_speed = 0.  # m/s
@@ -59,8 +64,15 @@ class AirbagNode(Node):
             Clock, '/clock', self.clockCb, 10)
         self._cached_clock_ = Clock()
 
+        # Diagnostic service
+        self.service = self.create_service(
+            RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
+
     def speedCb(self, msg: CarlaSpeedometer):
         self.current_speed = msg.speed
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def distanceToSpeedLimit(self, dist: float):
         """Map distance to max speed. This should be very conservative,
@@ -101,6 +113,9 @@ class AirbagNode(Node):
 
         self.speed_limit = self.distanceToSpeedLimit(closest_x)
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def commandCb(self, msg: VehicleControl):
 
         if self.current_speed > self.speed_limit:
@@ -115,7 +130,40 @@ class AirbagNode(Node):
 
     def clockCb(self, msg: Clock):
         self._cached_clock_ = msg
+        
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'Airbag'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.status.values.append(self.stamp)
+
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+
+        if self.statusBool == True:
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+
+        response.status = self.status
+        self.get_logger().info(f"Incoming request from Guardian to Airbag...")
+        return response
 
 def main(args=None):
     rclpy.init(args=args)
