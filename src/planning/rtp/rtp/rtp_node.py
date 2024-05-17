@@ -30,6 +30,7 @@ Minimum update rate: 2 Hz, ideally 5 Hz
 
 from matplotlib import pyplot as plt
 from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+from navigator_msgs.srv import RetrieveStatus
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from navigator_msgs.msg import Mode
 import numpy as np
@@ -83,6 +84,10 @@ class RecursiveTreePlanner(Node):
     def __init__(self):
         super().__init__('rtp_node')
 
+        self.statusBool = None
+        self.callback_count = -1
+        self.callback_arr = np.zeros((6,), dtype = int)
+
         self.speed_costmap = np.zeros((151, 151))
         self.origin = (44., 75.)
 
@@ -109,6 +114,8 @@ class RecursiveTreePlanner(Node):
             Clock, '/clock', self.clockCb, 1)
         self.clock = Clock().clock
 
+        self.service = self.create_service(RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
+
         self.command_pub = self.create_publisher(
             VehicleControl, '/vehicle/control', 1)
 
@@ -132,6 +139,9 @@ class RecursiveTreePlanner(Node):
     def currentModeCb(self, msg: Mode):
         self.current_mode = msg.mode
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def speedCostMapCb(self, msg: OccupancyGrid):
         if msg.info.height == 0:
             self.speed_costmap = np.asarray(msg.data, dtype=np.int8).reshape(
@@ -141,11 +151,51 @@ class RecursiveTreePlanner(Node):
             self.speed_costmap = np.asarray(msg.data, dtype=np.int8).reshape(
                 msg.info.height, msg.info.width)
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
     def clockCb(self, msg: Clock):
         self.clock = msg.clock
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
+    def retrieveStatusCb(self, response):
+        self.status = DiagnosticStatus()
+        self.stamp = KeyValue()
+
+        self.status.name = 'Recursive Tree Planner'
+
+        self.stamp.key = 'stamp ID'
+        self.stamp.value = str(self.clock)
+
+        self.status.values.append(self.stamp)
+        
+        for self.callback_count in self.callback_arr:
+            if self.callback_arr[self.callback_count] == 1:
+                self.statusBool = True
+            elif self.callback_arr[self.callback_count] == 0:
+                self.statusBool = False
+
+        if self.statusBool == True:
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
+        elif self.statusBool == False:
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
+        elif self.statusBool == None:
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Status unknown...'
+
+        response.status = self.status
+        self.get_logger().info(f"Incoming request from Guardian to RTP...")
+        return response
+
     def speedCb(self, msg: VehicleSpeed):
         self.speed = msg.speed
+
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
 
     def getBarrierIndex(self, path: CostedPath, map: np.ndarray, width_meters=1.8) -> int:
         """Given a path, perform a basic collision check and return the pose index
@@ -663,6 +713,9 @@ class RecursiveTreePlanner(Node):
         self.status_pub.publish(status)
         self.last_status_time = time.time()
 
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
+
         # print(f"Done in {time.time() - start}!")
 
     def goForward(self, msg: OccupancyGrid):
@@ -695,6 +748,8 @@ class RecursiveTreePlanner(Node):
         heading = np.arcsin(msg.pose.pose.orientation.z) * 2
 
         self.ego_pose = [pos.x, pos.y, heading]
+        self.callback_count += 1
+        self.callback_arr[self.callback_count] = 1
         return
 
 
