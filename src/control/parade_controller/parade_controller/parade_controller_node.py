@@ -55,6 +55,8 @@ class ParadeController(Node):
         # TF listener
 
         # Publisher
+        self.diagnostic_pub = self.create_publisher(DiagnosticStatus, '/node_statuses', 10)
+
         self.throttle_pub = self.create_publisher(
             VehicleControl, '/vehicle/control', 10)
         
@@ -175,30 +177,31 @@ class ParadeController(Node):
         self.statusBool = True
 
     def retrieveStatusCb(self, response):
-        self.msg = DiagnosticStatus()
+        self.status = DiagnosticStatus()
         self.stamp = KeyValue()
 
-        self.msg.name = 'Parade Controller'
+        self.status.name = 'Parade Controller'
 
         self.stamp.key = 'stamp ID'
         self.stamp.value = str(self.clock)
 
-        self.msg.values.append(self.stamp)
+        self.status.values.append(self.stamp)
 
         if self.statusBool == True:
-            self.msg.level = DiagnosticStatus.OK
-            self.msg.message = 'Node is FUNCTIONING properly!'
+            self.status.level = DiagnosticStatus.OK
+            self.status.message = 'Node is FUNCTIONING properly!'
 
         elif self.statusBool == False:
-            self.msg.level = DiagnosticStatus.ERROR
-            self.msg.message = 'Node has encountered an ERROR!'
+            self.status.level = DiagnosticStatus.ERROR
+            self.status.message = 'Node has encountered an ERROR!'
 
         elif self.statusBool == None:
-            self.msg.level = DiagnosticStatus.WARN
-            self.msg.message = 'Diagnostics unknown...'
+            self.status.level = DiagnosticStatus.WARN
+            self.status.message = 'Diagnostics unknown...'
 
-        response.status = self.msg
+        response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to Parade Controller...")
+        self.diagnostic_pub.publish(self.status)
         return response
     
     def clockCb(self, msg: Clock):
