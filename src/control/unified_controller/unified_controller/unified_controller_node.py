@@ -83,6 +83,7 @@ class UnifiedController(Node):
 
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to Unified Controller...")
+        self.diagnostic_pub.publish(self.status)
         return response
 
     def generate_commands(self):
@@ -292,6 +293,12 @@ class UnifiedController(Node):
             RetrieveStatus,
             'retrieve_status',
             self.retrieveStatusCb
+        )
+        # Publisher for node status
+        self.diagnostic_pub = self.create_publisher(
+            DiagnosticStatus,
+            '/node_statuses',
+            10
         )
         # Publishers for throttle, brake, and steering
         self.throttle_pub = self.create_publisher(
