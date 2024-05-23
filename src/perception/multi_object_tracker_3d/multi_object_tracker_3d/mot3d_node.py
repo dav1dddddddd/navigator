@@ -102,6 +102,11 @@ class MultiObjectTracker3DNode(Node):
             'retrieve_status',
             self.retrieveStatusCb
         )
+        self.diagnostic_pub = self.create_publisher(
+            msg_type = DiagnosticStatus,
+            topic = '/node_statuses',
+            qos_profile = 10
+        )
         self.tracked_objects_publisher = self.create_publisher(
             msg_type = Object3DArray,
             topic = 'objdet3d_tracked',
@@ -143,6 +148,7 @@ class MultiObjectTracker3DNode(Node):
 
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to MOT3D...")
+        self.diagnostic_pub.publish(self.status)
         return response
 
     def detection_callback(self, detection_msg: Object3DArray):
