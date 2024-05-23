@@ -60,6 +60,11 @@ class LidarObjectDetector3DNode(Node):
             'retrieve_status',
             self.retrieveStatusCb
         )
+        self.diagnostic_pub = self.create_publisher(
+            DiagnosticStatus,
+            '/node_statuses',
+            10
+        )
         self.objects_publisher = self.create_publisher(
             Object3DArray, 
             'objdet3d_raw', 
@@ -100,6 +105,7 @@ class LidarObjectDetector3DNode(Node):
 
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to LIDAR Obj-det 3D...")
+        self.diagnostic_pub.publish(self.status)
         return response
 
     def lidar_callback(self, lidar_msg: PointCloud2):
