@@ -141,6 +141,8 @@ class DriveableAreaNode(Node):
 
         self.result_pub = self.create_publisher(Image, "/cameras/camera0/drivable", 1)
 
+        self.diagnostic_pub = self.create_publisher(DiagnosticStatus, '/node_statuses', 10)
+
         self.current_image: Image = None
 
         self.cv_bridge = CvBridge()
@@ -195,6 +197,7 @@ class DriveableAreaNode(Node):
 
         response.status = self.status
         self.get_logger().info("Incoming request from Guardian to Driveable Area...")
+        self.diagnostic_pub.publish(self.status)
         return response
 
     def makeSegmentation(self):
