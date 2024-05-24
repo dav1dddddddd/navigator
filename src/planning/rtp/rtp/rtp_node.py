@@ -116,6 +116,9 @@ class RecursiveTreePlanner(Node):
 
         self.service = self.create_service(RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
 
+        self.diagnostic_pub = self.create_publisher(
+            DiagnosticStatus, '/node_statuses', 10)
+
         self.command_pub = self.create_publisher(
             VehicleControl, '/vehicle/control', 1)
 
@@ -189,6 +192,7 @@ class RecursiveTreePlanner(Node):
 
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to RTP...")
+        self.diagnostic_pub.publish(self.status)
         return response
 
     def speedCb(self, msg: VehicleSpeed):
