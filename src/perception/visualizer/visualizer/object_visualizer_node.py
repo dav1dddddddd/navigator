@@ -42,6 +42,8 @@ class ObjectVisualizerNode(Node):
 
         self.visualization_publisher = self.create_publisher(MarkerArray, 'objdet3d_viz', 10)
 
+        self.diagnostic_pub = self.create_publisher(DiagnosticStatus, '/node_statuses', 10)
+
     def clockCb(self, msg: Clock):
         self.clock = msg.clock
 
@@ -77,6 +79,7 @@ class ObjectVisualizerNode(Node):
 
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to Object Visualizer...")
+        self.diagnostic_pub.publish(self.status)
         return response
 
     def visualize_objects(self, msg: Object3DArray):
