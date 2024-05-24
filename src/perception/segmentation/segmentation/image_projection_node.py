@@ -112,6 +112,9 @@ class ImageProjectioNode(Node):
         self.semantic_lidar_pub = self.create_publisher(
             PointCloud2, "/lidar/semantic", 10)
 
+        self.diagnostic_pub = self.create_publisher(
+            DiagnosticStatus, '/node_statuses', 10)
+
         left_camera_info_sub = self.create_subscription(
             CameraInfo, '/carla/hero/rgb_left/camera_info', self.leftCameraInfoCb, 1)
 
@@ -170,6 +173,7 @@ class ImageProjectioNode(Node):
 
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to Image Projection...")
+        self.diagnostic_pub.publish(self.status)
         return response
 
     def imageToNumpy(self, msg: Image) -> np.array:
