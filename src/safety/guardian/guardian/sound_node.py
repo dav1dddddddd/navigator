@@ -50,6 +50,9 @@ class sound_node(Node):
         # Diagnostic service
         self.service = self.create_service(RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
 
+        # Diagnostic publisher
+        self.diagnostic_pub = self.create_publisher(DiagnosticStatus, '/node_statuses', 10)
+
         current_mode_sub = self.create_subscription(Mode, "/guardian/mode", self.currentModeCb, 1)
         alert_sound_timer = self.create_timer(1.0, self.playAlert)
 
@@ -107,6 +110,7 @@ class sound_node(Node):
 
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to Sound...")
+        self.diagnostic_pub.publish(self.status)
         return response
 
     def playWaitingSound(self):
