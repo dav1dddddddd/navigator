@@ -136,6 +136,7 @@ class JunctionManager(Node):
         
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to Junction Manager...")
+        self.status_pub.publish(self.status)
         return response
 
     def buttonCb(self, msg: Joy):
