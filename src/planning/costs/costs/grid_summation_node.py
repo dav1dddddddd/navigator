@@ -113,7 +113,7 @@ class GridSummationNode(Node):
             Egma, '/egma/cost', 1)
 
         self.status_pub = self.create_publisher(
-            DiagnosticStatus, '/node_status', 1)
+            DiagnosticStatus, '/node_statuses', 1)
 
         self.combine_timer = self.create_timer(0.1, self.createCostMap)
 
@@ -182,6 +182,7 @@ class GridSummationNode(Node):
         
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to Grid Summation...")
+        self.status_pub.publish(self.status)
         return response
 
     # Make sure we're only keeping the newest grid messages
