@@ -74,6 +74,13 @@ class PredNetNode(Node):
         self.prednet_combined_pub = self.create_publisher(
             OccupancyGrid, '/grid/predictions_combined', 10)
 
+        # Diagnostic publisher
+        self.diagnostic_pub = self.create_publisher(
+            DiagnosticStatus,
+            '/node_statuses',
+            10
+        )
+
         # Stores the past 0.5 seconds of occupancy grids
         self.history_m = []
 
@@ -172,6 +179,7 @@ class PredNetNode(Node):
 
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to PredNet Inference...")
+        self.diagnostic_pub.publish(self.status)
         return response
 
     # Adds masses to history
