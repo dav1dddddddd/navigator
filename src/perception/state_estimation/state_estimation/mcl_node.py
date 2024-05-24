@@ -81,6 +81,9 @@ class MCLNode(Node):
 
         self.service = self.create_service(RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
 
+        self.diagnostic_pub = self.create_publisher(
+            DiagnosticStatus, '/node_statuses', 10)
+
         self.particle_cloud_pub = self.create_publisher(
             PointCloud2, '/mcl/particles', 10)
         # landmark_request = GetLandmarks.Request()
@@ -290,6 +293,7 @@ class MCLNode(Node):
 
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to MCL...")
+        self.diagnostic_pub.publish(self.status)
         return response
 
 def main(args=None):
