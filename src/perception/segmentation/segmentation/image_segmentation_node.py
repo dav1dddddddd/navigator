@@ -129,6 +129,9 @@ class ImageSegmentationNode(Node):
 
         self.clock_sub = self.create_subscription(
             Clock, '/clock', self.clock_cb, 1)
+
+        self.diagnostic_pub = self.create_publisher(
+            DiagnosticStatus, '/node_statuses', 10)
         self.clock = Clock()
         self.service = self.create_service(
             RetrieveStatus, 'retrieve_status', self.retrieveStatusCb)
@@ -170,6 +173,7 @@ class ImageSegmentationNode(Node):
 
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to Image Segmentation...")
+        self.diagnostic_pub.publish(self.status)
         return response
 
     def imageToNumpy(self, msg) -> np.ndarray:
