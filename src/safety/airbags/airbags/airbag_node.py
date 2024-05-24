@@ -53,6 +53,9 @@ class AirbagNode(Node):
         self.status_pub = self.create_publisher(
             DiagnosticStatus, '/status/airbags', 1)
 
+        self.diagnostic_pub = self.create_publisher(
+            DiagnosticStatus, '/node_statuses', 10)
+
         self.marker_pub = self.create_publisher(
             Marker, '/visuals/airbags', 1)
 
@@ -163,6 +166,7 @@ class AirbagNode(Node):
 
         response.status = self.status
         self.get_logger().info(f"Incoming request from Guardian to Airbag...")
+        self.diagnostic_pub.publish(self.status)
         return response
 
 def main(args=None):
