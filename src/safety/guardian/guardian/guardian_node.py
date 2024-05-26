@@ -54,6 +54,12 @@ class guardian_node(Node):
         self.clock = 0.0
         self.path_receive_time = time.time()
 
+        self.client = self.create_client(
+            RetrieveStatus, 'retrieve_status')
+
+        while not self.client.wait_for_service(timeout_sec = 2.0):
+            self.get_logger().info("Service unavailable... Waiting...")
+
         simulated = self.declare_parameter(
             'simulated', False)
 
@@ -102,6 +108,10 @@ class guardian_node(Node):
 
         self.auto_disabled = True
         self.manual_disabled = False
+
+    def send_request(self):
+        request = RetrieveStatus.Request()
+        self.future = self.create.call_async(request)
 
     def pathCb(self, msg: Path):
         """Here we simply note the time that the message was received.
