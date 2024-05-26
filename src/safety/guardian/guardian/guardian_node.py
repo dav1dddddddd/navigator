@@ -142,6 +142,9 @@ class guardian_node(Node):
             including a global status that reflects the Guardian's state
         """
 
+        Guardian = guardian_node()
+        Guardian.send_request()
+
         global_status = self.initStatusMsg('global')
         array_msg = DiagnosticArray()
         array_msg.header.stamp = self.get_clock().now().to_msg()
@@ -164,6 +167,26 @@ class guardian_node(Node):
                 global_status.message = status.message
                 self.manual_disabled = False
                 manual_error_description += status.message + '; '
+                if Guardian.future.done():
+                    try:
+                        response = Guardian.future.result()
+                    except Exception as e:
+                        self.get_logger().info(f"Service call failed... {e}")
+                    else:
+                        self.get_logger().info(f"Node status published... Organizing {response.status.name}'s status.")
+                        if response.status.level == DiagnosticStatus.ERROR:
+                            self.get_logger().info(f"{response.status.name} has malfunctioned... Reinforcing global status.")
+                            global_status.level = DiagnosticStatus.ERROR
+                            self.get_logger().info("Done!")
+                        elif response.status.level == DiagnosticStatus.OK:
+                            self.get_logger().info(f"{response.status.name} is working properly... Correcting global status.")
+                            global_status.level = DiagnosticStatus.OK
+                            self.get_logger().info("Done!")
+                        elif response.status.level == DiagnosticStatus.WARN:
+                            self.get_logger().info(f"{response.status.name} status unknown... Transitioning global status.")
+                            global_status.level = DiagnosticStatus.WARN
+                            self.get_logger().info("Done!")
+                    break
             elif status.level == NOT_RECEIVED:
                 global_status.level = DiagnosticStatus.ERROR
 
@@ -198,6 +221,26 @@ class guardian_node(Node):
                 global_status.message = status.message
                 self.auto_disabled = True
                 manual_error_description += status.message + '; '
+                if Guardian.future.done():
+                    try:
+                        response = Guardian.future.result()
+                    except Exception as e:
+                        self.get_logger().info(f"Service call failed... {e}")
+                    else:
+                        self.get_logger().info(f"Node status published... Organizing {response.status.name}'s status.")
+                        if response.status.level == DiagnosticStatus.ERROR:
+                            self.get_logger().info(f"{response.status.name} has malfunctioned... Reinforcing global status.")
+                            global_status.level = DiagnosticStatus.ERROR
+                            self.get_logger().info("Done!")
+                        elif response.status.level == DiagnosticStatus.OK:
+                            self.get_logger().info(f"{response.status.name} is working properly... Correcting global status.")
+                            global_status.level = DiagnosticStatus.OK
+                            self.get_logger().info("Done!")
+                        elif response.status.level == DiagnosticStatus.WARN:
+                            self.get_logger().info(f"{response.status.name} status unknown... Transitioning global status.")
+                            global_status.level = DiagnosticStatus.WARN
+                            self.get_logger().info("Done!")
+                    break
             elif status.level == NOT_RECEIVED:
                 global_status.level = DiagnosticStatus.ERROR
 
@@ -231,6 +274,26 @@ class guardian_node(Node):
                 global_status.level = DiagnosticStatus.ERROR
                 global_status.message = status.message
                 manual_error_description += status.message + '; '
+                if Guardian.future.done():
+                    try:
+                        response = Guardian.future.result()
+                    except Exception as e:
+                        self.get_logger().info(f"Service call failed... {e}")
+                    else:
+                        self.get_logger().info(f"Node status published... Organizing {response.status.name}'s status.")
+                        if response.status.level == DiagnosticStatus.ERROR:
+                            self.get_logger().info(f"{response.status.name} has malfunctioned... Reinforcing global status.")
+                            global_status.level = DiagnosticStatus.ERROR
+                            self.get_logger().info("Done!")
+                        elif response.status.level == DiagnosticStatus.OK:
+                            self.get_logger().info(f"{response.status.name} is working properly... Correcting global status.")
+                            global_status.level = DiagnosticStatus.OK
+                            self.get_logger().info("Done!")
+                        elif response.status.level == DiagnosticStatus.WARN:
+                            self.get_logger().info(f"{response.status.name} status unknown... Transitioning global status.")
+                            global_status.level = DiagnosticStatus.WARN
+                            self.get_logger().info("Done!")
+                    break
             elif status.level == NOT_RECEIVED:
                 global_status.level = DiagnosticStatus.WARN
 
