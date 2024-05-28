@@ -26,7 +26,7 @@ const float max_steering_angle_radians = 0.35;
 PidControllerNode::PidControllerNode() : rclcpp::Node("pid_controller") {
   this->statusBool = NULL;
   this->callback_count = -1;
-  bool callback_arr[2] = {false};
+  this->callback_arr[3] = {false};
   this->declare_parameter("KP");
   this->declare_parameter("KI");
   this->declare_parameter("KD");
@@ -83,6 +83,8 @@ void PidControllerNode::recalculate_output() {
   auto message = std_msgs::msg::Float32();
   message.data = steering_power;
   this->steering_control_publisher->publish(message);
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 void retrieve_status(const std::shared_ptr<navigator_msgs::srv::RetrieveStatus::Response> response) {
@@ -121,6 +123,4 @@ void retrieve_status(const std::shared_ptr<navigator_msgs::srv::RetrieveStatus::
   response->status = this->status;
   RCLCPP_INFO(rclcpp:get_logger("rclcpp"), "Incoming request from Guardian to Pid Controller...");
   this->diagnostic_publisher->publish(this->status)
-  
-  
 }
