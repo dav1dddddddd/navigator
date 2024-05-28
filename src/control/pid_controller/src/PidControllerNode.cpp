@@ -11,9 +11,9 @@
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float32.hpp"
 
-#include "navigator_msgs/srv/RetrieveStatus.hpp"
-#include <diagnostic_msgs/DiagnosticStatus.h>
-#include <diagnostic_msgs/KeyValue.h>
+#include "navigator_msgs/srv/retrievestatus.hpp"
+#include "diagnostic_msgs/msg/diagnosticstatus.hpp"
+#include "diagnostic_msgs/msg/keyvalue.hpp"
 
 #include <memory>
 #include <utility>
