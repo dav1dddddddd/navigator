@@ -40,7 +40,7 @@ PidControllerNode::PidControllerNode() : rclcpp::Node("pid_controller") {
   this->steering_control_publisher = this->create_publisher<std_msgs::msg::Float32>
     ("output", 8);
   this->diagnostic_publisher = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>
-    ("node_statuses", 8);
+    ("node_statuses", 10);
   this->command_subscription = this->create_subscription
     <std_msgs::msg::Float32>("target", 8,
     std::bind(& PidControllerNode::update_target, this, std::placeholders::_1));
@@ -49,7 +49,7 @@ PidControllerNode::PidControllerNode() : rclcpp::Node("pid_controller") {
     std::bind(& PidControllerNode::update_measurement, this, std::placeholders::_1));
   this->last_update_time = this->clock.now();
   this->service = this->create_service<navigator_msgs::srv::RetrieveStatus>('retrieve_status',
-  std::bind(& PidControllerNode::retrieve_status, this, std::placeholders::_1));
+  std::bind(& PidControllerNode::retrieve_status, this, std::placeholders::_1, std::placeholders::_2));
 }
 
 PidControllerNode::~PidControllerNode() {}
@@ -87,7 +87,7 @@ void PidControllerNode::recalculate_output() {
   this->callback_arr[this->callback_count] = true;
 }
 
-void retrieve_status(const std::shared_ptr<navigator_msgs::srv::RetrieveStatus::Response> response) {
+void PidControllerNode::retrieve_status(const std::shared_ptr<navigator_msgs::srv::RetrieveStatus::Response> response) {
   this->status = diagnostic_msgs::DiagnosticStatus node_status;
   this->stamp = diagnostic_msgs::KeyValue stamp_ID;
 
@@ -121,6 +121,6 @@ void retrieve_status(const std::shared_ptr<navigator_msgs::srv::RetrieveStatus::
   }
 
   response->status = this->status;
-  RCLCPP_INFO(rclcpp:get_logger("rclcpp"), "Incoming request from Guardian to Pid Controller...");
+  RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Incoming request from Guardian to Pid Controller...");
   this->diagnostic_publisher->publish(this->status)
 }
