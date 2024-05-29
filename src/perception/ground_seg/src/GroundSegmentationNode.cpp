@@ -9,12 +9,22 @@
 
 #include "ground_seg/GroundSegmentationNode.hpp"
 
+#include "navigator_msgs/srv/retrievestatus.hpp"
+#include "diagnostic_msgs/msg/diagnosticstatus.hpp"
+#include "diagnostic_msgs/msg/keyvalue.hpp"
+
+#include <time.h>
+
 using namespace navigator::perception;
 using namespace std::chrono_literals;
 
 GroundSegmentationNode::GroundSegmentationNode() : Node("ground_segmentation_node")
 {
   this->declare_parameter<double>("sensitivity", 0.2);
+
+  this->statusBool = NULL;
+  this->callback_count = -1;
+  this->callback_arr[2] = {false};
 
   // Subscribe to and use CARLA's clock
   clock_sub = this->create_subscription<Clock>(
@@ -27,6 +37,10 @@ GroundSegmentationNode::GroundSegmentationNode() : Node("ground_segmentation_nod
       std::bind(&GroundSegmentationNode::pointCloudCb, this, std::placeholders::_1));
 
   filtered_lidar_pub = this->create_publisher<PointCloud2>("/lidar/filtered", 10);
+
+  diagnostic_publisher = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>("node_statuses", 10);
+
+  service = this->create_service<navigator_msgs::srv::RetrieveStatus>("retrieve_status", std::bind(& GroundSegmentationNode::retrieve_status, this, std::placeholders::_1, std::placeholders::_2));
 }
 
 /**
@@ -48,6 +62,48 @@ void GroundSegmentationNode::pointCloudCb(PointCloud2::SharedPtr msg)
   filtered_msg.header = msg->header;
 
   filtered_lidar_pub->publish(filtered_msg);
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
+}
+
+void GroundSegmentationNode::retrieve_status(const std::shared_ptr<navigator_msgs::srv::RetrieveStatus::Response> response) {
+  this->status = diagnostic_msgs::DiagnosticStatus node_status;
+  this->stamp = diagnostic_msgs::KeyValue stamp_ID;
+
+  this->status.name = 'Ground Segmentation';
+
+  this->stamp_ID.key = 'stamp ID';
+  this->stamp_ID.value = this->clock.now()
+
+  this->status.values.push_back(this->stamp_ID);
+
+  for (int i = 0; i < this->callback_count; i++) {
+    if (this->callback_arr[i] == true) {
+      this->statusBool = true;
+    }
+    else if (this->callback_arr[i] == false) {
+      this->statusBool = false;
+      break;
+    }
+  }
+
+  if (this->statusBool = true) {
+    this->status.level = diagnostic_msgs::DiagnosticStatus::OK;
+    this->status.message = 'Node is FUNCTIONING properly!';
+  }
+  else if (this->statusBool = false) {
+    this->status.level = diagnostic_msgs::DiagnosticStatus::ERROR;
+    this->status.message = 'Node has encountered an ERROR!';
+  }
+  else if (this->statusBool = NULL) {
+    this->status.level = diagnostic_msgs::DiagnosticStatus::WARN;
+    this->status.message = 'Status unknown...';
+  }
+
+  response->status = this->status;
+  RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Incoming request from Guardian to Ground Segmentation...");
+  this->diagnostic_publisher->publish(this->status)
 }
 
 /**
@@ -210,6 +266,9 @@ pcl::PointCloud<pcl::PointXYZI> GroundSegmentationNode::removeGround(pcl::PointC
       }
     }
   }
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 
   return filtered_pcd;
 }
