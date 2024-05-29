@@ -102,8 +102,9 @@ void PidControllerNode::retrieve_status(const std::shared_ptr<navigator_msgs::sr
     if (this->callback_arr[i] == true) {
       this->statusBool = true;
     }
-    if (this->callback_arr[i] == false) {
+    else if (this->callback_arr[i] == false) {
       this->statusBool = false;
+      break;
     }
   }
 
