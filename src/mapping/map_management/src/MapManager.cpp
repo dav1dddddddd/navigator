@@ -11,9 +11,14 @@
 
 #include "map_management/MapManager.hpp"
 
+#include "navigator_msgs/srv/retrievestatus.hpp"
+#include "diagnostic_msgs/msg/diagnosticstatus.hpp"
+#include "diagnostic_msgs/msg/keyvalue.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <list>
+#include <time.h>
 
 #include <fstream>
 
@@ -35,6 +40,11 @@ struct Arc
 
 MapManagementNode::MapManagementNode() : Node("map_management_node")
 {
+    // Diagnostic setup
+    this->statusBool = NULL;
+    this->callback_count = -1;
+    this->callback_arr[13] = {false};
+
     // Params
     this->declare_parameter("from_file", false);
     this->declare_parameter("data_path", "/home/nova/navigator/data");
@@ -50,12 +60,14 @@ MapManagementNode::MapManagementNode() : Node("map_management_node")
     //route_dist_grid_pub_ = this->create_publisher<OccupancyGrid>("/grid/route_distance", 10);
     route_path_pub_ = this->create_publisher<Path>("/planning/smoothed_route", 10);
     goal_pose_pub_ = this->create_publisher<PoseStamped>("/planning/goal_pose", 1);
+    diagnostic_publisher = this->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>("node_statuses", 10);
     //route_progress_pub_ = this->create_publisher<std_msgs::msg::Float32>("/route_progress", 1);
     clock_sub = this->create_subscription<Clock>("/clock", 10, bind(&MapManagementNode::clockCb, this, std::placeholders::_1));
     clicked_point_sub_ = this->create_subscription<PointStamped>("/clicked_point", 1, bind(&MapManagementNode::clickedPointCb, this, std::placeholders::_1));
 
     // Services
     route_set_service_ = this->create_service<navigator_msgs::srv::SetRoute>("set_route", bind(&MapManagementNode::setRoute, this, std::placeholders::_1, std::placeholders::_2));
+    diagnostic_service = this->create_service<navigator_msgs::srv::RetrieveStatus>("retrieve_status", bind(& MapManagementNode::retrieve_status, this, std::placeholders::_1, std::placeholders::_2));
 
     // only need route timer if we want the route distance grid, but that has been commented out
     //route_timer_ = this->create_wall_timer(LOCAL_ROUTE_LS_FREQ, bind(&MapManagementNode::updateLocalRouteLinestring, this));
@@ -164,6 +176,8 @@ void MapManagementNode::updateLocalRouteLinestring()
             break;
         bg::append(local_route_linestring_, route_linestring_[i]);
     }
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
 }
 
 /**
@@ -200,11 +214,15 @@ void MapManagementNode::publishSmoothRoute()
         }
         route_path_pub_->publish(smoothed_route_msg_);
     }
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
 }
 
 void MapManagementNode::clickedPointCb(PointStamped::SharedPtr msg)
 {
     setRouteFromClickedPt(*msg);
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
 }
 
 std::vector<odr::LaneKey> laneKeysFromPoint(odr::point pt, bgi::rtree<odr::value, bgi::rstar<16, 4>> lane_tree, std::vector<odr::LanePair> lane_polys)
@@ -278,6 +296,9 @@ void MapManagementNode::setPredeterminedRoute()
         route_linestrings_.push_back(key_ls_simplified);
         // route_linestrings_.push_back(getLaneCenterline(k));
     }
+    
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
 
     // bg::simplify(route_linestring_, route_linestring_, 1.0);
 
@@ -491,6 +512,48 @@ void MapManagementNode::setRoute(const std::shared_ptr<navigator_msgs::srv::SetR
         response->message = message;
         response->success = true;
     }
+    
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
+}
+
+void MapManagementNode::retrieve_status(const std::shared_ptr<navigator_msgs::srv::RetrieveStatus::Response> response) {
+    this->status = diagnostic_msgs::DiagnosticStatus node_status;
+    this->stamp = diagnostic_msgs::KeyValue stamp_ID;
+
+    this->status.name = 'Map Manager';
+    
+    this->stamp_ID.key = 'stamp ID';
+    this->stamp_ID.value = this->clock.now();
+
+    this->status.values.push_back(this->stamp_ID);
+
+    for (int i = 0; i < this->callback_count; i++) {
+        if (this->callback_arr[i] == true) {
+            this->statusBool = true;
+        }
+        else if (this->callback_arr[i] == false) {
+            this->statusBool = false;
+            break;
+        }
+    }
+
+    if (this->statusBool = true) {
+        this->status.level = diagnostic_msgs::DiagnosticStatus::OK;
+        this->status.message = 'Node is FUNCTIONING properly!';
+    }
+    else if (this->statusBool = false) {
+        this->status.level = diagnostic_msgs::DiagnosticStatus::ERROR;
+        this->status.message = 'Node has encountered an ERROR!';
+    }
+    else if (this->statusBool = NULL) {
+        this->status.level = diagnostic_msgs::DiagnosticStatus::WARN;
+        this->status.message = 'Status unknown...';
+    }
+
+    response->status = this->status;
+    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Incoming request from Guardian to Map Manager...");
+    this->diagnostic_publisher->publish(this->status);
 }
 
 /**
@@ -753,6 +816,9 @@ void MapManagementNode::publishGrids(int top_dist, int bottom_dist, int side_dis
     goal_pose_pub_->publish(goal_pose);
 
     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
     // std::cout << "publishGrids(): " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << "[ms]" << std::endl;
 }
 
@@ -928,6 +994,9 @@ void MapManagementNode::buildTrueRoutingGraph()
     }
 
     RCLCPP_INFO(get_logger(), "Built complete routing graph.");
+
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
 }
 
 void MapManagementNode::recursiveSearch(std::vector<odr::LaneKey> predecessors, odr::LaneKey target)
@@ -944,6 +1013,9 @@ void MapManagementNode::recursiveSearch(std::vector<odr::LaneKey> predecessors, 
     }
 
     auto successors = getTrueSuccessors(current_lane);
+
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
 
     // for (auto successor : successors)
     // {
@@ -976,6 +1048,8 @@ std::vector<odr::LaneKey> MapManagementNode::calculateRoute(odr::LaneKey start, 
 void MapManagementNode::clockCb(Clock::SharedPtr msg)
 {
     this->clock_ = msg;
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
 }
 
 /**
@@ -1012,6 +1086,9 @@ void MapManagementNode::drivableAreaGridPubTimerCb()
 {
     // std::printf("Publishing grids\n");
     publishGrids(40, 20, 30, 0.4);
+    
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
 }
 
 // CPP code for printing shortest path between
@@ -1149,6 +1226,9 @@ void MapManagementNode::updateRouteWaypoints(Path::SharedPtr msg)
     }
 
     RCLCPP_INFO(get_logger(), "%i waypoints added to tree", rough_route_tree_.size());
+
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
 }
 
 RoiIndices getWaypointsInROI(LineString waypoints, bgi::rtree<odr::value, bgi::rstar<16, 4>> tree, BoostPoint ego_pos)
@@ -1257,6 +1337,9 @@ void MapManagementNode::updateRouteGivenDestination(odr::point destination)
 
     std::vector<odr::LaneKey> complete_segment; // keys, but with gaps in lanes filled.
 
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
+
     // THIS FUNCTION LOOKS HALF COMPLETE.... TRYING TO FILL IT IN....
     // auto from_keys = laneKeysFromPoint(from_pt, map_wide_tree_, lane_polys_);
     // auto to_keys = laneKeysFromPoint(to_pt, map_wide_tree_, lane_polys_);
@@ -1306,4 +1389,7 @@ void MapManagementNode::worldInfoCb(CarlaWorldInfo::SharedPtr msg)
     RCLCPP_INFO(this->get_logger(), "Loaded %s", msg->map_name.c_str());
 
     buildTrueRoutingGraph();
+
+    this->callback_count++;
+    this->callback_arr[this->callback_count] = true;
 }
