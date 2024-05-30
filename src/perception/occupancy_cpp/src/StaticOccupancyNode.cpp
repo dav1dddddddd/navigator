@@ -9,6 +9,10 @@
 
 #include "occupancy_cpp/StaticOccupancyNode.hpp"
 
+#include "navigator_msgs/srv/retrievestatus.hpp"
+#include "diagnostic_msgs/msg/diagnosticstatus.hpp"
+#include "diagnostic_msgs/msg/keyvalue.hpp"
+
 using namespace navigator::perception;
 using namespace std::chrono_literals;
 
@@ -19,6 +23,9 @@ using namespace std::chrono_literals;
  */
 StaticOccupancyNode::StaticOccupancyNode() : Node("static_occupancy_node")
 {
+  this->statusBool = NULL;
+  this->callback_count = -1;
+  this->callback-arr[16] = {false};
   //------Subscribers-------//
   // Subscribe to and use CARLA's clock
   clock_sub = this->create_subscription<Clock>(
@@ -34,11 +41,53 @@ StaticOccupancyNode::StaticOccupancyNode() : Node("static_occupancy_node")
   //----Publishers-------//
   occupancy_grid_pub = this->create_publisher<OccupancyGrid>("/grid/occupancy/current", 10);
   masses_pub = this->create_publisher<Masses>("/grid/masses", 10);
+  diagnostic_publisher = this->create_publisher<diagnostic::msg::DiagnosticStatus>
+  ("node_statuses", 10);
+  service = this->create_service<navigator_msgs::srv::RetrieveStatus>('retrieve_status', std::bind(& StaticOccupancyNode::retrieve_status, this, std::placeholders::_1, std::placeholders::_2));
 }
 
 StaticOccupancyNode::~StaticOccupancyNode()
 {
   // nothing here
+}
+
+void StaticOccupancyNode::retrieve_status(const std::shared_ptr<navigator_msgs::srv::RetrieveStatus::Response> response) {
+  this->status = diagnostic_msgs::DiagnosticStatus node_status;
+  this->stamp = diagnostic_msgs::KeyValue stamp_ID;
+
+  this->status.name = 'Static Occupancy';
+
+  this->stamp_ID.key = 'stamp ID';
+  this->stamp_ID.value = this->clock.now();
+
+  this->status.values.push_back(this->stamp_ID);
+
+  for (int i = 0; i < this->callback_count; i++) {
+    if (this->callback_arr[i] == true) {
+      this->statusBool = true;
+    }
+    else if (this->callback_arr[i] == false) {
+      this->statusBool = false;
+      break;
+    }
+  }
+
+  if (this->statusBool = true) {
+    this->status.level = diagnostic_msgs::DiagnosticStatus::OK;
+    this->status.message = 'Node is FUNCTIONING properly!';
+  }
+  else if (this->statusBool = false) {
+    this->status.level = diagnostic_msgs::DiagnosticStatus::ERROR;
+    this->status.message = 'Node has encountered an ERROR!';
+  }
+  else if (this->statusBool = NULL) {
+    this->status.level = diagnostic_msgs::DiagnosticStatus::WARN;
+    this->status.message = 'Status unknown...';
+  }
+
+  response->status = this->status;
+  RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Incoming request from Guardian to Static Occupancy...");
+  diagnostic_publisher->publish(this->status);
 }
 
 /**
@@ -68,6 +117,9 @@ void StaticOccupancyNode::pointCloudCb(PointCloud2::SharedPtr msg)
 
   // 5. Clear current measured grid
   clear();
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 /**
@@ -89,6 +141,9 @@ void StaticOccupancyNode::createOccupancyGrid(pcl::PointCloud<pcl::PointXYZI> &c
 
   // 3. Add an ego vehicle mask to the grid.
   // addEgoMask();
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 /**
@@ -183,6 +238,9 @@ void StaticOccupancyNode::add_points_to_the_DST(pcl::PointCloud<pcl::PointXYZI> 
       ray_tracing_approximation_x_increment((-1) * x, y, -1, 1, false);
     }
   }
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 /**
@@ -302,6 +360,9 @@ void StaticOccupancyNode::add_free_spaces_to_the_DST()
     }
     angles[(int)(angle)] = false;
   }
+  
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 /**
@@ -319,6 +380,8 @@ void StaticOccupancyNode::addEgoMask()
       measured_free[i][j] = 0.0;
     }
   }
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 //-------------HELPERS----------------------------//
@@ -359,6 +422,9 @@ void StaticOccupancyNode::publishOccupancyGrid()
   }
   occupancy_grid_pub->publish(msg);
   masses_pub->publish(masses_msg);
+  
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 void StaticOccupancyNode::update_previous()
@@ -447,6 +513,9 @@ void StaticOccupancyNode::update_previous()
   // y_old_high = y_new_high;
 
   //----------END OF CODE------------//
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 /**
@@ -464,6 +533,8 @@ void StaticOccupancyNode::mass_update()
   }
   // Combine measurement and prediction to form posterior occupied and free masses.
   update_of();
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 // updates probabilities using a bayes filter. Takes into account measured probabilities and predicted probability values.
@@ -486,6 +557,9 @@ void StaticOccupancyNode::update_of()
       updated_free[i][j] = (updated_freeP[i][j] * measured_cell_unknown + unknown_pred * measured_free[i][j] + updated_freeP[i][j] * measured_free[i][j]) / (1.0f - k_value);
     }
   }
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 /**
@@ -551,6 +625,9 @@ void StaticOccupancyNode::ray_tracing_approximation_y_increment(int x2, int y2, 
     measured_occ[x_coordinate][y_coordinate] = meas_mass;
     measured_free[x_coordinate][y_coordinate] = 0.0;
   }
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 void StaticOccupancyNode::ray_tracing_approximation_x_increment(int x2, int y2, int flip_x, int flip_y, bool inclusive)
@@ -586,6 +663,9 @@ void StaticOccupancyNode::ray_tracing_approximation_x_increment(int x2, int y2, 
     measured_occ[x_coordinate][y_coordinate] = meas_mass;
     measured_free[x_coordinate][y_coordinate] = 0.0;
   }
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 // VERTICLE +
@@ -608,6 +688,9 @@ void StaticOccupancyNode::ray_tracing_vertical(int x2)
   }
 
   measured_free[x2 + 64][64] = 0.0;
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 // VERTICLE -
@@ -629,6 +712,9 @@ void StaticOccupancyNode::ray_tracing_vertical_n(int x1)
   }
 
   measured_free[x2 + 64][64] = 0.0;
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 // HORIZONTAL +
@@ -647,6 +733,9 @@ void StaticOccupancyNode::ray_tracing_horizontal(int y2)
     }
     measured_free[64][y + 64] = meas_mass;
   }
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 // HORIZONTAL -
@@ -668,6 +757,9 @@ void StaticOccupancyNode::ray_tracing_horizontal_n(int y1)
   }
 
   measured_free[64][y2 + 64] = 0.0;
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
 
 void StaticOccupancyNode::clear()
@@ -680,4 +772,7 @@ void StaticOccupancyNode::clear()
       measured_free[i][j] = 0.0;
     }
   }
+
+  this->callback_count++;
+  this->callback_arr[this->callback_count] = true;
 }
