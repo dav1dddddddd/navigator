@@ -103,7 +103,7 @@ void GroundSegmentationNode::retrieve_status(const std::shared_ptr<navigator_msg
 
   response->status = this->status;
   RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Incoming request from Guardian to Ground Segmentation...");
-  this->diagnostic_publisher->publish(this->status)
+  diagnostic_publisher->publish(this->status);
 }
 
 /**

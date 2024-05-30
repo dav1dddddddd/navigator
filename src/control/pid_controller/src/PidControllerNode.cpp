@@ -123,5 +123,5 @@ void PidControllerNode::retrieve_status(const std::shared_ptr<navigator_msgs::sr
 
   response->status = this->status;
   RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Incoming request from Guardian to Pid Controller...");
-  this->diagnostic_publisher->publish(this->status)
+  this->diagnostic_publisher->publish(this->status);
 }
